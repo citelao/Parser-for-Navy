@@ -21,8 +21,8 @@ def parse(file)
 	max_length = arr_of_arrs.max_by(&:length).length
 	headers.pop
 	
-	headers_to_add = max_length - 1 - headers.length
-	
+	headers_to_add = max_length - headers.length
+		
 	headers_to_add.times do |i|
 		headers.push("Ship #{i+1}")
 	end
@@ -56,20 +56,23 @@ def filter!(data)
 	end
 	
 	data.delete_if {|row| row["to_delete"] == true }
+	data.each{|row| row.delete("to_delete")}
 end
 
 def save(data, filename)
 	filename = filename + "1" if (File.exist?(filename))
 	
 	CSV.open(filename, "wb") do |csv|
-		csv << data[0].keys.slice(0, data[0].keys.length-1)
+		csv << data[0].keys
 				
 		data.each do|row|
-			csv << row.values.slice(0, row.values.length-1)
+			csv << row.values
 		end
 	end
 end
 
+ARGV.push "-h" if (ARGV.length == 0)
+	
 ARGV.each do|arg|
 	case
 	when (arg == "--verbose" || arg == "-v")
@@ -82,6 +85,8 @@ ARGV.each do|arg|
 		puts "Usage: `./parser.rb [args] file [file...]`"
 		puts "--verbose, -v: verbose messaging"
 		puts "--help, -h: this help text"
+		puts
+		puts "Requires Ruby v1.9+"
 	else
 		puts "Using #{arg} \r\n"
 		puts
