@@ -15,11 +15,12 @@ end
 def parse(file)
 	# convert all to string arrays
 	arr_of_arrs = CSV.read(file)
+	
 	headers = arr_of_arrs.shift.map {|head| head.to_s }
 	data = arr_of_arrs.map {|row| row.map {|cell| cell.to_s } }
 	
 	max_length = arr_of_arrs.max_by(&:length).length
-	headers.pop
+	headers.delete("Ships")
 	
 	headers_to_add = max_length - headers.length
 		
