@@ -16,3 +16,7 @@ xcuserdata
 # svn & cvs
 .svn
 CVS
+
+# unnecessary logs
+*.csv
+navy*.log
