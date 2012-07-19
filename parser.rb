@@ -6,18 +6,28 @@ require 'highline'
 require 'pp'
 require 'progress_bar'
 
-# Ruby On Rails: http://bit.ly/Nypi1I
-# Adds a difference comparison for parsing.
+##
+# Hash implementation of #diff(), taken from 
+# Ruby on Rails <http://bit.ly/Nypi1I>
 class Hash
-  def diff(other)
+	
+	##
+	# The infamous Hash#diff() function. Used for comparing lines.
+	def diff(other)
 	dup.
-	  delete_if { |k, v| other[k] == v }.
-	  merge!(other.dup.delete_if { |k, v| has_key?(k) })
-  end
+		delete_if { |k, v| other[k] == v }.
+		merge!(other.dup.delete_if { |k, v| has_key?(k) })
+	end
 end
 
+##
+# Class for handling all CSVs used in this project. Passed a filename and a
+# debug mode (to determine level of output), this class parses, filters––
+# everything that this whole parser app does.
 class Extrapolated_CSV
-	# Reads CSV data from a filename into a key-value hash
+	
+	##
+	# Reads CSV data from a filename into a readable key-value hash
 	def initialize(file, debug = false)
 		arr_of_arrs = CSV.read(file)
 		
@@ -38,21 +48,27 @@ class Extrapolated_CSV
 		headers.push("Misses")
 		
 		# Shamelessly: http://bit.ly/Q4kGVn
-		# Interpolate the headers with the data, then flatten
-		# Because Hash accepts [key, value, key, value, ...]
+		# Interpolate the headers with the data, then flatten because Hash
+		# accepts [key, value, key, value, ...]
 		@csv = arr_of_arrs.map {|row| Hash[*headers.zip(row).flatten]}
 		@debug = debug
 		return @csv
 	end
 	
+	##
+	# Returns location [x] in CSV.
 	def [](x)
 		@csv[x]
 	end
 	
+	##
+	# Iterates through the CSV.
 	def each(&block)
 		@csv.each(&block)
 	end
 	
+	##
+	# Strips all redundant lines
 	def filter
 		@csv.each_index do|index|
 			row = @csv[index]
@@ -86,6 +102,29 @@ class Extrapolated_CSV
 		@csv.each{|row| row.delete("to_delete")}
 	end
 	
+	##
+	# Calculates shots, missage, and hittage.
+	#
+	# This method assumes that no more than one click may happen per frame. 		# Since one shot may destroy multiple ships, "Shots" accurately reflects
+	# clicks, while "Hits" accurately reflects destroyed ships.
+	#
+	# This is unacceptable for edge cases (see `small.log`) like times where
+	# multiple frames are missing leading to mega score changes. However
+	# there is no real way to derive accurate data from that, considering that
+	# multiple combinations of hits, misses, and shots may be reflected by a
+	# single score:
+	#
+	# 12pts => 10 hits, 8 misses => 18 shots OR
+	# 12pts => 6 hits, 0 misses => 6 shots.
+	#
+	# The best I can do with flawed data like that is take the smallest shot 
+	# change possible: assume all hits, rounding away any decimals. Flawed?
+	# Yes. But those are flaws with the data the program CANNOT work around.
+	#
+	# Suggested workaround:	Mark any large jumps in timestamp / score as INVALID
+	# 						when graphing and looking at data in Excel, etc.
+	#
+	# Any flaws => your fault :)
 	def extrapolate
 		@csv.each_index do|index|
 			row = @csv[index]
@@ -93,45 +132,82 @@ class Extrapolated_CSV
 			
 			differences = row.diff(last_row)
 			
-			row["Score"], row["Misses"], row["Hits"] =  "0" \
-				if last_row["Timestamp"].to_i > row["Timestamp"].to_i
+			# Since the array wraps, set everything to 0 if it	finds the 
+			# previous timestamp (ie final index) to be greater than the
+			# current one.
+			is_first = last_row["Timestamp"].to_i > row["Timestamp"].to_i
+			row["Score"], row["Misses"], row["Hits"] =	"0" if is_first
 			
-			if differences.has_key?("Score") and \
-				last_row["Timestamp"].to_i < row["Timestamp"].to_i
-				score_dif = row["Score"].to_i - last_row["Score"].to_i
-				case
-				when score_dif < 0 # Lost points - miss or ship left screen
-					puts "Missed. #{score_dif} #{row['Timestamp']}" \
-						if @debug
-					row["Misses"] = (last_row["Misses"].to_i + 1).to_s;
-				when score_dif  > 0 # Gained points - hit
-#					puts "Hit. #{row['Timestamp']}" if verbose?
-					row["Hits"] = (last_row["Hits"].to_i + 1).to_s;
-				else # da-whuh?
-					puts "Um. This shouldn't happen. #{score_dif}"
-					puts "Something's broken on Ruby-on-Rail's side. (ln 9)"
+			if !is_first
+				# Set all to previous then override
+				row["Shots"] = last_row["Shots"]
+				row["Misses"] = last_row["Misses"]
+				row["Hits"] = last_row["Hits"]
+						
+				if differences.has_key?("Score")
+					score_dif = row["Score"].to_i - last_row["Score"].to_i
+					
+					row["Shots"] = (last_row["Shots"].to_i + 1).to_s
+					
+					case
+					when score_dif < 0
+						# Lost points => Miss or ship left screen
+						row["Misses"] = (last_row["Misses"].to_i + \
+							score_dif.abs).to_s
+						
+						puts "Missed #{row['Misses']}/#{row['Shots']} @ \
+							#{row['Timestamp']}" if @debug
+							
+					when score_dif > 0
+						# Gained points => Hit
+						# 2 Points = 1 Hit.
+						row["Hits"] = (last_row["Hits"].to_i + \
+							score_dif.abs / 2).to_s
+						
+						puts "Hit #{row['Hits']}/#{row['Shots']} @ \
+						#{row['Timestamp']}" if @debug
+					end
 				end
-				row["Shots"] = (last_row["Shots"].to_i + 1).to_s;
-			else 
-				row["Shots"], row["Misses"], row["Hits"] =\
-					*last_row.values_at("Shots", "Misses", "Hits")
 			end
 		end
 	end
-end
+end # Extrapolated_CSV
 
+##
+# CLI for parser.
 class Navy_Parser < Clamp::Command 
+	self.description = %{
+		Parse Navy's .log files.
+		
+		Parser by Ben Stolovitz. CC BY-SA 3.0.
+		Navy by Ben Davison.
+	}
+	
 	option ["-v", "--verbose"], :flag, "be chatty"
 	option ["-d", "--debug"], :flag, "moar output? OK."	
 	
+	option ["--version"], :flag, "show version" do
+		puts "Navy Parser v0.9rc1"
+		puts "Powered by Clamp-#{Clamp::VERSION}"
+		exit(0)
+	  end
+
+	
 	parameter "FILE ...", "input files / folders"
 	
-	def initialize(unused, also_unused)
+	##
+	# Initialize basically sets up variables I could not use otherwise.
+	def initialize(unused, but_still_waiting_and_watching_silently)
+		# Since this extends Clamp::Command, I have to use the required 
+		# variables. I don't need them so I don't care what they're named.
 		@parsable_files = []
 		@bar_flags = [:percentage, :bar, :eta]
 		@steps = 4
 	end
 	
+	##
+	# Extension of Clamp's variable parsing, finds all usable (.log) files 
+	# recursively through folders and files passed.
 	def file_list=(file)
 		file.map do|item|
 			Dir.glob("**/*.log") do|file|
@@ -142,28 +218,33 @@ class Navy_Parser < Clamp::Command
 		end
 	end
 	
+	##
+	# Passes parsable files to an array of Extrapolated_CSVs. Then does
+	# everything and writes to screen depending on the verbosity.
 	def execute
+		
+		# This will not live update, but neither do the progress bars, really.
 		terminal_width = HighLine::SystemExtensions.terminal_size[0]
 		
 		puts "Parsing #{@parsable_files.length} files."
 		
 		if verbose?
 			print "Parsing..."
+			# In order to float right.
 			print " " * (terminal_width-10-11)
 			print "Step 1 of #{@steps} \r"
 			
-			parse_bar = ProgressBar.new(@parsable_files.length, *@bar_flags)
+			bar = ProgressBar.new(@parsable_files.length, *@bar_flags)
 		else
 			bar = ProgressBar.new(@parsable_files.length * 4, *@bar_flags)
 		end
 		
-		exploded_csvs = Hash.new
+		extrapolated_csvs = Hash.new
 		
+		# Create a list of new Extrapolated_CSV for each parsable CSV.
 		@parsable_files.map do|file| 
-			parse_bar.increment! if verbose?
-			bar.increment! unless verbose?
-			
-			exploded_csvs[file] = Extrapolated_CSV.new(file, debug?) 
+			bar.increment!
+			extrapolated_csvs[file] = Extrapolated_CSV.new(file, debug?) 
 		end
 		
 		if verbose?
@@ -171,13 +252,11 @@ class Navy_Parser < Clamp::Command
 			print " " * (terminal_width-12-11)
 			print "Step 2 of #{@steps} \r"
 			
-			filter_bar = ProgressBar.new(exploded_csvs.length, *@bar_flags)
+			bar = ProgressBar.new(extrapolated_csvs.length, *@bar_flags)
 		end
 		
-		exploded_csvs.each do|file, csv|
-			filter_bar.increment! if verbose?
-			bar.increment! unless verbose?
-			
+		extrapolated_csvs.each do|file, csv|
+			bar.increment!
 			csv.filter
 		end
 		
@@ -186,13 +265,11 @@ class Navy_Parser < Clamp::Command
 			print " " * (terminal_width-16-11)
 			print "Step 3 of #{@steps} \r"
 		
-			extrapolate_bar = ProgressBar.new(exploded_csvs.length, *@bar_flags)
+			bar = ProgressBar.new(extrapolated_csvs.length, *@bar_flags)
 		end
 		
-		exploded_csvs.each do|file, csv|
-			extrapolate_bar.increment! if verbose?
-			bar.increment! unless verbose?
-			
+		extrapolated_csvs.each do|file, csv|
+			bar.increment!	
 			csv.extrapolate
 		end
 		
@@ -201,20 +278,22 @@ class Navy_Parser < Clamp::Command
 			print " " * (terminal_width-9-11)
 			print "Step 4 of #{@steps} \r"
 			
-			saving_bar = ProgressBar.new(exploded_csvs.length, *@bar_flags)
+			bar = ProgressBar.new(extrapolated_csvs.length, *@bar_flags)
 		end
 		
-		exploded_csvs.each do|file, data|
-			saving_bar.increment! if verbose?
-			bar.increment! unless verbose?
+		extrapolated_csvs.each do|file, data|
+			bar.increment!
 			
-			filename = "#{file[0...-4]}.treated.csv"			
+			filename = "#{file[0...-4]}.treated.csv"
+			
+			# In case of file conflicts, iterate until a better name is found.
 			i = 2
 			while File.exist?(filename)
 				filename = "#{file[0...-4]}.treated.#{i}.csv"
 				i += 1
 			end
 			
+			# Write to file.
 			CSV.open(filename, "wb") do |csv|
 				csv << data[0].keys
 						
