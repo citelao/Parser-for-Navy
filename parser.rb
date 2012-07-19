@@ -105,7 +105,8 @@ class Extrapolated_CSV
 	##
 	# Calculates shots, missage, and hittage.
 	#
-	# This method assumes that no more than one click may happen per frame. 		# Since one shot may destroy multiple ships, "Shots" accurately reflects
+	# This method assumes that no more than one click may happen per frame.
+	# Since one shot may destroy multiple ships, "Shots" accurately reflects
 	# clicks, while "Hits" accurately reflects destroyed ships.
 	#
 	# This is unacceptable for edge cases (see `small.log`) like times where
