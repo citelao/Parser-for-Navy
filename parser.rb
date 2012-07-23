@@ -46,6 +46,7 @@ class Extrapolated_CSV
 		headers.push("Shots")
 		headers.push("Hits")
 		headers.push("Misses")
+		headers.push("Losses")
 		
 		# Shamelessly: http://bit.ly/Q4kGVn
 		# Interpolate the headers with the data, then flatten because Hash
@@ -143,22 +144,37 @@ class Extrapolated_CSV
 				# Set all to previous then override
 				row["Shots"] = last_row["Shots"]
 				row["Misses"] = last_row["Misses"]
+				row["Losses"] = last_row["Losses"]
 				row["Hits"] = last_row["Hits"]
 						
 				if differences.has_key?("Score")
+					# Calculate score difference 
 					score_dif = row["Score"].to_i - last_row["Score"].to_i
+					
+					# Determine if lost ship
+					ships = differences.select {|k, v| k.include?("Ship")}
+					lost_ships = ships.keep_if {|k, v| v == nil}
 					
 					row["Shots"] = (last_row["Shots"].to_i + 1).to_s
 					
 					case
 					when score_dif < 0
 						# Lost points => Miss or ship left screen
-						row["Misses"] = (last_row["Misses"].to_i + \
-							score_dif.abs).to_s
+						# -1 ship = lost ship
+						# -0 ships = missed
+						miss = (lost_ships.count == 0) ? score_dif.abs : 0
+						loss = (lost_ships.count == 0) ? 0 : lost_ships.count
+						
+						# Missed
+						row["Misses"] = (last_row["Misses"].to_i + miss).to_s
 						
 						puts "Missed #{row['Misses']}/#{row['Shots']} @ \
-							#{row['Timestamp']}" if @debug
-							
+						#{row['Timestamp']}" if @debug && miss != 0
+						
+						# Lost
+						row["Losses"] = (last_row["Losses"].to_i + loss)
+						
+						puts "Lost ship @ #{row['Timestamp']}" if @debug && loss != 0
 					when score_dif > 0
 						# Gained points => Hit
 						# 2 Points = 1 Hit.
@@ -177,18 +193,18 @@ end # Extrapolated_CSV
 ##
 # CLI for parser.
 class Navy_Parser < Clamp::Command 
-	self.description = %{
-		Parse Navy's .log files.
-		
-		Parser by Ben Stolovitz. CC BY-SA 3.0.
-		Navy by Ben Davison.
-	}
+self.description = %{
+Parse Navy's .log files.
+
+Parser by Ben Stolovitz. CC BY-SA 3.0.
+Navy by Ben Davison.
+}
 	
 	option ["-v", "--verbose"], :flag, "be chatty"
 	option ["-d", "--debug"], :flag, "moar output? OK."	
 	
 	option ["--version"], :flag, "show version" do
-		puts "Navy Parser v0.9rc1"
+		puts "Navy Parser v0.9rc2"
 		puts "Powered by Clamp-#{Clamp::VERSION}"
 		exit(0)
 	  end
@@ -211,8 +227,10 @@ class Navy_Parser < Clamp::Command
 	# recursively through folders and files passed.
 	def file_list=(file)
 		file.map do|item|
-			Dir.glob("**/*.log") do|file|
-				@parsable_files.push(file)
+			Dir.chdir(item) do|path|
+				Dir.glob("**/*.log") do|file|
+					@parsable_files.push("#{path}/#{file}")
+				end
 			end if File.directory?(item)
 			
 			@parsable_files.push(item) unless File.directory?(item)
