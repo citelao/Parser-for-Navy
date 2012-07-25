@@ -39,8 +39,6 @@ class Extrapolated_CSV
 								# It will become "Ship 1"
 		
 		headers_to_add = max_length - headers.length 	
-		headers_to_add.times {|i| headers.push("Ship #{i+1}") } \
-			unless headers_to_add < 1
 		
 		# Add extrapolated headers
 		headers.push("Shots")
@@ -49,10 +47,16 @@ class Extrapolated_CSV
 		headers.push("Losses")
 		headers.push("Total Ships")
 		
+		headers_to_add.times {|i| headers.push("Ship #{i+1}") } \
+			unless headers_to_add < 1
+		
 		# Shamelessly: http://bit.ly/Q4kGVn
 		# Interpolate the headers with the data, then flatten because Hash
 		# accepts [key, value, key, value, ...]
-		@csv = arr_of_arrs.map {|row| Hash[*headers.zip(row).flatten]}
+		@csv = arr_of_arrs.map do|row|
+			row.insert(4, nil, nil, nil, nil, nil)
+			Hash[*headers.zip(row).flatten]
+		end
 		@debug = debug
 		return @csv
 	end
