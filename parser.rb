@@ -47,6 +47,7 @@ class Extrapolated_CSV
 		headers.push("Hits")
 		headers.push("Misses")
 		headers.push("Losses")
+		headers.push("Total Ships")
 		
 		# Shamelessly: http://bit.ly/Q4kGVn
 		# Interpolate the headers with the data, then flatten because Hash
@@ -104,11 +105,11 @@ class Extrapolated_CSV
 	end
 	
 	##
-	# Calculates shots, missage, and hittage.
+	# Calculates shots, missage, hittage, total ships, and missed ships.
 	#
-	# This method assumes that no more than one click may happen per frame.
-	# Since one shot may destroy multiple ships, "Shots" accurately reflects
-	# clicks, while "Hits" accurately reflects destroyed ships.
+	# This method partially assumes that no more than one click may happen per 
+	#frame/ Since one shot may destroy multiple ships, "Shots" accurately 
+	# reflects clicks, while "Hits" accurately reflects destroyed ships.
 	#
 	# This is unacceptable for edge cases (see `small.log`) like times where
 	# multiple frames are missing leading to mega score changes. However
@@ -123,8 +124,8 @@ class Extrapolated_CSV
 	# change possible: assume all hits, rounding away any decimals. Flawed?
 	# Yes. But those are flaws with the data the program CANNOT work around.
 	#
-	# Suggested workaround:	Mark any large jumps in timestamp / score as INVALID
-	# 						when graphing and looking at data in Excel, etc.
+	# Suggested workaround: Mark any large jumps in timestamp / score as INVALID
+	#                       when graphing and looking at data in Excel, etc.
 	#
 	# Any flaws => your fault :)
 	def extrapolate
@@ -138,7 +139,7 @@ class Extrapolated_CSV
 			# previous timestamp (ie final index) to be greater than the
 			# current one.
 			is_first = last_row["Timestamp"].to_i > row["Timestamp"].to_i
-			row["Score"], row["Misses"], row["Hits"] =	"0" if is_first
+			row["Score"], row["Misses"], row["Hits"] = "0" if is_first
 			
 			if !is_first
 				# Set all to previous then override
@@ -146,14 +147,21 @@ class Extrapolated_CSV
 				row["Misses"] = last_row["Misses"]
 				row["Losses"] = last_row["Losses"]
 				row["Hits"] = last_row["Hits"]
-						
+				row["Total Ships"] = last_row["Total Ships"]
+				
+				# Determine if lost ship
+				ships = differences.select {|k, v| k.include?("Ship") && !k.include?("Total")}
+				lost_ships = ships.select {|k, v| v == nil}
+				
+				row_ships = row.select {|k, v| k.include?("Ship") && !k.include?("Total") && v != nil}
+				lrow_ships = last_row.select {|k, v| k.include?("Ship") && !k.include?("Total") && v != nil}
+				added_ships_count = row_ships.count - lrow_ships.count
+				
+				row["Total Ships"] = (last_row["Total Ships"].to_i + added_ships_count) if added_ships_count > 0
+				
 				if differences.has_key?("Score")
-					# Calculate score difference 
+					# Calculate score difference
 					score_dif = row["Score"].to_i - last_row["Score"].to_i
-					
-					# Determine if lost ship
-					ships = differences.select {|k, v| k.include?("Ship")}
-					lost_ships = ships.keep_if {|k, v| v == nil}
 					
 					row["Shots"] = (last_row["Shots"].to_i + 1).to_s
 					
@@ -174,7 +182,8 @@ class Extrapolated_CSV
 						# Lost
 						row["Losses"] = (last_row["Losses"].to_i + loss)
 						
-						puts "Lost ship @ #{row['Timestamp']}" if @debug && loss != 0
+						puts "Lost ship @ #{row['Timestamp']}" \
+						 if @debug && loss != 0
 					when score_dif > 0
 						# Gained points => Hit
 						# 2 Points = 1 Hit.
